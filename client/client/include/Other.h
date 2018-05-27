@@ -1,5 +1,4 @@
 #pragma once
-#include "Header.h"
 
 template<int32_t X, int32_t N>
 struct POW
@@ -13,20 +12,29 @@ struct POW<X, 1>
 	static constexpr int32_t value = X;
 };
 
-// Struct containing client IP and corresponding socket
-struct ADDR_SOCKET
+struct WRAPPER
 {
-	ADDR_SOCKET(char * client_ip, SOCKET sckt)
-	{
-		memcpy(clientip, client_ip, INET6_ADDRSTRLEN);
-
-		socket = sckt;
-	}
-
-	char clientip[INET6_ADDRSTRLEN];
 	SOCKET socket;
+	HANDLE handle;
 };
 
+enum class ErrorCodes : int8_t
+{
+	Correct = 0x01,
+	MemoryAllocationError = 0x01,
+	MutexReleaseFailure = 0x02,
+	Undefined = 0x03
+};
+
+
+enum class SocketState : int8_t
+{
+	Open = 0x00,
+	Closed = 0x01
+};
+
+
+// Dictionary to check for duplicates of messages
 template<typename T, size_t N>
 class Dictionary
 {
@@ -78,22 +86,32 @@ int8_t Dictionary<T, N>::find(T id)
 	return 0;
 }
 
-class Message
+// Interface for messages
+class IMessage
 {
 public:
-	Message() {};
+	virtual int32_t messageLength() const = 0;
 
-	Message(char *msg, char *src_ip) : message(msg)
-	{
+	virtual const char* getMessage() const = 0;
+
+	virtual const char* getIp() const = 0;
+};
+
+// An implementation of the interface
+class Message : public IMessage
+{
+public:
+	Message() = default;
+
+	Message(char *msg, char *src_ip) : message(msg) {
 		memcpy(source_ip, src_ip, INET6_ADDRSTRLEN);
 	}
 
-	int32_t message_length() const { return message.size(); };
+	virtual int32_t messageLength() const override { return message.size(); };
 
-	// Return null-terminated array of chars
-	const char* get_message() const { return message.data(); };
+	virtual const char* getMessage() const override { return message.data(); };
 
-	const char* get_ip() const { return source_ip; };
+	virtual const char* getIp() const override { return source_ip; };
 
 private:
 	std::string message;

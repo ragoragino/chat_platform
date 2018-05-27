@@ -1,3 +1,6 @@
+#pragma once
+#ifdef OLD
+
 #include "Header.h"
 #include "Other.h"
 
@@ -14,11 +17,13 @@ static CRITICAL_SECTION socketsLock;
 static std::vector<ADDR_SOCKET> sockets;
 
 static CRITICAL_SECTION errorCodeLock;
-static int8_t errorCode = 0x00;
+static ErrorCodes errorCode = ErrorCodes::Correct;
 
-inline int8_t sendall(SOCKET socket, char *message, int32_t message_size, int32_t flags)
+static SocketState closingSocketSignalCode = SocketState::Open;
+
+inline int32_t sendall(SOCKET socket, char *message, int32_t message_size, int32_t flags)
 {
-	int8_t s_send;
+	int32_t s_send;
 
 	while (true)
 	{
@@ -41,9 +46,9 @@ inline int8_t sendall(SOCKET socket, char *message, int32_t message_size, int32_
 	}
 }
 
-inline int8_t recvall(SOCKET socket, char *message, int32_t message_size, int32_t flags)
+inline int32_t recvall(SOCKET socket, char *message, int32_t message_size, int32_t flags)
 {
-	int8_t s_recv;
+	int32_t s_recv;
 
 	while (true)
 	{
@@ -73,11 +78,18 @@ inline int8_t recvall(SOCKET socket, char *message, int32_t message_size, int32_
 	}
 }
 
-unsigned closeSocketWrap(SOCKET socket, int32_t flag)
-{		
+unsigned closeSocketWrap(SOCKET socket, int8_t flag)
+{
 	int8_t symbol;
 	constexpr int32_t size_buffer = 512;
 	char buffer[size_buffer];
+
+	if (closingSocketSignalCode == SocketState::Closed) {
+		printf("INFO: closeSocketWrap in thread (Id: %d) - socket already closed\n",
+			GetCurrentThreadId());
+
+		return 0;
+	}
 
 	switch (flag)
 	{
@@ -89,20 +101,29 @@ unsigned closeSocketWrap(SOCKET socket, int32_t flag)
 				GetCurrentThreadId(), WSAGetLastError());
 
 			closesocket(socket);
+
+			closingSocketSignalCode = SocketState::Closed;
+
 			return 1;
 		}
 
 	case 1:
-		symbol = recvall(socket, buffer, size_buffer, NULL);
+		symbol = recv(socket, buffer, size_buffer, NULL);
 		if (symbol == SOCKET_ERROR)
 		{
 			printf("ERROR: closeSocketWrap in thread (Id: %d) - recvall failed with error: %d\n",
 				GetCurrentThreadId(), WSAGetLastError());
 
 			closesocket(socket);
+
+			closingSocketSignalCode = SocketState::Closed;
+
 			return 1;
 		}
-		printf(buffer);
+		else if (symbol != 0)
+		{
+			printf(buffer);
+		}
 
 	case 2:
 		symbol = closesocket(socket);
@@ -111,22 +132,25 @@ unsigned closeSocketWrap(SOCKET socket, int32_t flag)
 			printf("ERROR: closeSocketWrap in thread (Id: %d) - close failed with error: %d\n",
 				GetCurrentThreadId(), WSAGetLastError());
 
+			closingSocketSignalCode = SocketState::Closed;
+
 			return 1;
 		}
 
+		break;
+
 	default:
-		return 0;
-	}	
+		printf("ERROR: closeSocketWrap in thread (Id: %d) - incorrect flag for socket closing received\n",
+			GetCurrentThreadId());
 
-	// The program should not access this part of the code
-	assert(false);
+		return 1;
+	}
 
-	return 1;
+	return 0;
 }
 
 unsigned __stdcall Sender(void *data)
 {
-	// TODO : Handle returning unallocated buffer
 	Message message;
 	char *buffer = (char*)malloc(_MAX_MESSAGE_SIZE + _LENGTH_SIZE + INET6_ADDRSTRLEN);
 	if (buffer == NULL)
@@ -136,7 +160,7 @@ unsigned __stdcall Sender(void *data)
 
 		EnterCriticalSection(&errorCodeLock);
 
-		errorCode = 0x02;
+		errorCode = ErrorCodes::MemoryAllocationError;
 
 		LeaveCriticalSection(&errorCodeLock);
 
@@ -147,7 +171,9 @@ unsigned __stdcall Sender(void *data)
 	{
 		EnterCriticalSection(&queueLock);
 
-		SleepConditionVariableCS(&queueNotEmpty, &queueLock, INFINITE);
+		while (messages.empty()) {
+			SleepConditionVariableCS(&queueNotEmpty, &queueLock, INFINITE);
+		}
 
 		while (!messages.empty())
 		{
@@ -176,13 +202,13 @@ unsigned __stdcall Sender(void *data)
 					continue;
 				}
 
-				symbol = sendall(addr_socket.socket, buffer, 
+				symbol = sendall(addr_socket.socket, buffer,
 					str_len + _LENGTH_SIZE + INET6_ADDRSTRLEN, NULL);
 
 				// Check for errors while sending the message
 				if (symbol == -1)
 				{
-					printf("ERROR: Sender thread (Id: %d) send failed with error: %d\n", 
+					printf("ERROR: Sender thread (Id: %d) send failed with error: %d\n",
 						GetCurrentThreadId(), WSAGetLastError());
 				}
 				else if (symbol == 0)
@@ -218,7 +244,7 @@ unsigned __stdcall Receiver(void *data)
 
 		EnterCriticalSection(&errorCodeLock);
 
-		errorCode = 0x02;
+		errorCode = ErrorCodes::MemoryAllocationError;
 
 		LeaveCriticalSection(&errorCodeLock);
 
@@ -232,11 +258,13 @@ unsigned __stdcall Receiver(void *data)
 		// Receive the size of the message
 		symbol = recvall(socket, buffer_size, _LENGTH_SIZE, NULL);
 		if (symbol != 1) {
-			break; 
+			break;
 		}
 
 		uint16_t *size_of_buffer16 = (uint16_t*)&buffer_size[0];
 		int32_t size_of_buffer32 = (int32_t)*size_of_buffer16;
+
+		printf("SIZE: %d\n", size_of_buffer32);
 
 		// Receive the address of the source
 		symbol = recvall(socket, src_addres, INET6_ADDRSTRLEN, NULL);
@@ -253,17 +281,23 @@ unsigned __stdcall Receiver(void *data)
 		// Checking for message duplication
 		uint16_t *id = (uint16_t*)&buffer_id[0];
 		if (ids.find(*id) == 1) {
-			break;
+			continue;
 		}
 		else {
 			ids.add(*id);
 		}
 
+		printf("ID: %d\n", *id);
+
 		// Receive and print the received message
 		symbol = recvall(socket, buffer, size_of_buffer32, NULL);
-		if (symbol != 1) { 
-			break; 
+		if (symbol != 1) {
+			break;
 		}
+
+		printf("BYTES RECEIVED: %d\n", size_of_buffer32 + _LENGTH_SIZE + INET6_ADDRSTRLEN + _ID_SIZE);
+
+		printf("BUFFER:%s\n", buffer);
 
 		// Safety null ending
 		buffer[size_of_buffer32] = '\0';
@@ -274,14 +308,14 @@ unsigned __stdcall Receiver(void *data)
 			symbol = 0;
 			break;
 		}
-	
+
 		printf(socket_addr->clientip);
 		printf(": ");
 		printf(buffer);
 
 		// Write the message and the src IP address to the messages vector
 		EnterCriticalSection(&queueLock);
-		
+
 		messages.emplace(buffer, socket_addr->clientip);
 
 		LeaveCriticalSection(&queueLock);
@@ -290,7 +324,7 @@ unsigned __stdcall Receiver(void *data)
 	}
 
 	free(buffer);
-	
+
 	int8_t return_symbol = 0;
 	if (symbol == -1)
 	{
@@ -324,7 +358,7 @@ unsigned __stdcall Receiver(void *data)
 	std::vector<ADDR_SOCKET>::iterator it = std::find_if(sockets.begin(), sockets.end(),
 		[&socket](const ADDR_SOCKET &a) { return socket == a.socket; });
 	sockets.erase(it);
-	
+
 	// Check the case of inability to release the mutex
 	LeaveCriticalSection(&socketsLock);
 
@@ -334,7 +368,7 @@ unsigned __stdcall Receiver(void *data)
 unsigned __stdcall ClientSession(void *data)
 {
 	unsigned threadIDReceiver;
-	HANDLE receiverHandle = (HANDLE)_beginthreadex(NULL, 0, &Receiver, 
+	HANDLE receiverHandle = (HANDLE)_beginthreadex(NULL, 0, &Receiver,
 		(void*)data, 0, &threadIDReceiver);
 
 	WaitForSingleObject(receiverHandle, INFINITE);
@@ -351,7 +385,7 @@ int main()
 	const char *port = "1050";
 	const char *server = "192.168.0.220"; // "127.0.0.1";
 
-	// Set the flags for getaddrinfo
+										  // Set the flags for getaddrinfo
 	memset(&hints, 0, sizeof hints);
 	hints.ai_family = AF_UNSPEC; // AF_INET or AF_INET6 to force version
 	hints.ai_socktype = SOCK_STREAM;
@@ -367,7 +401,7 @@ int main()
 
 	// Fill the res addrinfo struct
 	int status = getaddrinfo(server, port, &hints, &res);
-	if (status != 0) 
+	if (status != 0)
 	{
 		printf("getaddrinfo: %s\n", gai_strerror(status));
 		freeaddrinfo(res);
@@ -420,7 +454,7 @@ int main()
 		// Check the global errors state
 		EnterCriticalSection(&errorCodeLock);
 
-		if(errorCode != 0x00)
+		if (errorCode != ErrorCodes::Correct)
 		{
 			printf("ERROR: Main Thread - errorCode set to %d. Exiting application!", errorCode);
 			exit(1);
@@ -431,7 +465,7 @@ int main()
 		// Handle errors in the socket acceptance
 		if (child_socket == INVALID_SOCKET)
 		{
-			printf("ERROR: Main Thread - setting child socket failed with error: %d\n", 
+			printf("ERROR: Main Thread - setting child socket failed with error: %d\n",
 				WSAGetLastError());
 			continue;
 		}
@@ -444,17 +478,17 @@ int main()
 		const char *guess_family = guest_address.sa_family == AF_INET ? "IPv4" : "IPv6";
 		printf("GUEST: %s: %s\n", guess_family, ipstr);
 		guest_address_length = sizeof sockaddr;
-		
+
 		ADDR_SOCKET *sock_address = (ADDR_SOCKET*)malloc(sizeof ADDR_SOCKET);
 		memcpy(sock_address->clientip, ipstr, INET6_ADDRSTRLEN);
 		sock_address->socket = child_socket;
 
 		// Add new socket to the vector of sockets
 		sockets.push_back(*sock_address);
-		
+
 		// Create a new thread for the accepted client (also pass in the accepted client socket)
 		unsigned threadID;
-		HANDLE hThread = (HANDLE)_beginthreadex(NULL, 0, &ClientSession, 
+		HANDLE hThread = (HANDLE)_beginthreadex(NULL, 0, &ClientSession,
 			(void*)sock_address, 0, &threadID);
 
 		LeaveCriticalSection(&socketsLock);
@@ -465,3 +499,4 @@ int main()
 
 	return 0;
 }
+#endif
