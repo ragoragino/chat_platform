@@ -3,11 +3,11 @@
 #include "ServerHandler.h"
 #include "ClientHandler.h"
 
-ServerHandler serverHandler;
-std::mutex serverMutex;
-
-std::mutex errorCodeMutex;
-ErrorCodes errorCode = ErrorCodes::Correct;
+namespace Chat
+{
+	ServerHandler serverHandler;
+	std::mutex serverMutex;
+}
 
 int main()
 {
@@ -67,7 +67,7 @@ int main()
 	}
 
 	// Initialize a thread that will be responsible for sending the messages
-	std::thread threadSocketSender(&ServerHandler::sender, std::ref(serverHandler));
+	std::thread threadSocketSender(&Chat::ServerHandler::sender, std::ref(Chat::serverHandler));
 
 	// Initialize vector holding threads that will be responsible for receiving messages
 	std::vector<std::thread> threadSocketReceivers;
@@ -77,15 +77,6 @@ int main()
 	int guest_address_length = sizeof sockaddr;
 	while (SOCKET child_socket = accept(mother_socket, &guest_address, &guest_address_length))
 	{
-		// Check for error codes
-		std::unique_lock<std::mutex> errorCodeLock(errorCodeMutex);
-		if (errorCode != ErrorCodes::Correct)
-		{
-			printf("ERROR: Main Thread - errorCode set to %d. Exiting application!", errorCode);
-			exit(1);
-		}
-		errorCodeLock.unlock();
-
 		// Handle errors in the socket acceptance
 		if (child_socket == INVALID_SOCKET)
 		{
@@ -101,16 +92,13 @@ int main()
 		guest_address_length = sizeof sockaddr;
 		
 		// Handle the accepted socket
-		std::unique_lock<std::mutex> serverLock(serverMutex);
-		serverHandler.addSocket(ADDR_SOCKET(child_socket, ipstr));
+		std::unique_lock<std::mutex> serverLock(Chat::serverMutex);
+		Chat::serverHandler.addSocket(ADDR_SOCKET(child_socket, ipstr));
 		serverLock.unlock();
 
-		ClientHandler ch(ADDR_SOCKET(child_socket, ipstr));
-		ch.receiver();
-
 		// Create a thread for receiving messages from this socket
-		//threadSocketReceivers.emplace_back(&ClientHandler::receiver, 
-		//	ClientHandler(ADDR_SOCKET(child_socket, ipstr)));
+		threadSocketReceivers.emplace_back(&Chat::ClientHandler::receiver,
+			Chat::ClientHandler(ADDR_SOCKET(child_socket, ipstr)));
 	}
 
 	closesocket(mother_socket);
@@ -118,3 +106,4 @@ int main()
 
 	return 0;
 }
+

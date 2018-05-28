@@ -95,6 +95,8 @@ public:
 	virtual const char* getMessage() const = 0;
 
 	virtual const char* getIp() const = 0;
+
+	virtual ~IMessage() {};
 };
 
 // An implementation of the interface
@@ -112,6 +114,8 @@ public:
 	virtual const char* getMessage() const override { return message.data(); };
 
 	virtual const char* getIp() const override { return source_ip; };
+
+	virtual ~Message() {};
 
 private:
 	std::string message;

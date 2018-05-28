@@ -1,6 +1,7 @@
 #pragma once
 #include "Header.h"
 
+// Compile-time power expression
 template<int32_t X, int32_t N>
 struct POW
 {
@@ -28,6 +29,7 @@ struct ADDR_SOCKET
 	SOCKET socket;
 };
 
+// Enum class for codes signalling application errors
 enum class ErrorCodes : int8_t
 {
 	Correct = 0x01,
@@ -36,6 +38,7 @@ enum class ErrorCodes : int8_t
 	Undefined = 0x03
 };
 
+// Enum class for codes signalling socket state
 enum class SocketState : int8_t
 {
 	Open = 0x00,
@@ -103,6 +106,8 @@ public:
 	virtual const char* getMessage() const = 0;
 
 	virtual const char* getIp() const = 0;
+
+	virtual ~IMessage() {};
 };
 
 // An implementation of the interface
@@ -121,8 +126,9 @@ public:
 
 	virtual const char* getIp() const override { return source_ip; };
 
+	virtual ~Message() {};
+
 private:
 	std::string message;
 	char source_ip[INET6_ADDRSTRLEN];
 };
-

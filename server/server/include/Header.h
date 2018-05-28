@@ -20,7 +20,9 @@
 #include <functional>
 #include <memory>
 
-# define _LENGTH_SIZE 2 // Size indicating the length of the data buffer
-# define _MAX_MESSAGE_SIZE POW<2, _LENGTH_SIZE * 8>::value + 1
-# define _MAXLOG 20
-# define _ID_SIZE 2 // Size indicating the length of the ID buffer
+#define _LENGTH_SIZE 2 // Size indicating the length of the data buffer
+#define _MAX_MESSAGE_SIZE POW<2, _LENGTH_SIZE * 8>::value + 1
+#define _MAXLOG 20
+#define _ID_SIZE 2 // Size indicating the length of the ID buffer
+#define _MAX_TRY 10 // How many trials the sender or receiver might try before giving up
+
