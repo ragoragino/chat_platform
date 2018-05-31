@@ -49,7 +49,7 @@ namespace Chat
 
 	int32_t ClientHandler::receiver()
 	{
-		int8_t symbol = 0;
+		int32_t symbol = 0;
 		char src_addres[INET6_ADDRSTRLEN];
 		char buffer_size[_LENGTH_SIZE];
 		char buffer_id[_ID_SIZE];
@@ -132,7 +132,7 @@ namespace Chat
 			serverLock.unlock();
 		}
 
-		int8_t return_symbol = 0;
+		int32_t return_symbol = 0;
 		if (symbol == -1)
 		{
 			printf("ERROR: Receiver thread (Id: %d) send failed with error: %d\n",
@@ -147,7 +147,7 @@ namespace Chat
 			printf("INFO: Receiver thread (Id: %d) connection failed!\n",
 				GetCurrentThreadId());
 
-			int8_t flag = this->closeSocket(2);
+			int32_t flag = this->closeSocket(2);
 
 			if (flag != 0) {
 				return_symbol = flag;
@@ -168,7 +168,7 @@ namespace Chat
 
 	int32_t ClientHandler::closeSocket(int8_t flag)
 	{
-		int8_t symbol;
+		int32_t symbol;
 		constexpr int32_t size_buffer = 512;
 		char buffer[size_buffer];
 

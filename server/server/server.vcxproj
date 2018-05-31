@@ -70,7 +70,7 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <IncludePath>D:\Materials\Programming\Projekty\chat_platform\server\server\include;$(IncludePath)</IncludePath>
+    <IncludePath>D:\Materials\Programming\CPP\Libraries\Crypto++;D:\Materials\Programming\Projekty\chat_platform\server\server\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
